@@ -4,22 +4,51 @@ from .models import Category, Product
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = '__all__'
+        fields = ['id', 'name', 'slug']
 
 class ProductSerializer(serializers.ModelSerializer):
     category_name = serializers.ReadOnlyField(source='category.name')
-    image = serializers.SerializerMethodField()
+    display_image = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
-        fields = ['id', 'category', 'category_name', 'name', 'slug', 'description', 'price', 'stock', 'image', 'image_url', 'created_at']
+        fields = [
+            'id', 
+            'category', 
+            'category_name', 
+            'name', 
+            'slug', 
+            'description', 
+            'price', 
+            'stock', 
+            'image', 
+            'image_url', 
+            'display_image', 
+            'created_at'
+        ]
+        extra_kwargs = {
+            'image': {'required': False, 'allow_null': True},
+            'image_url': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'slug': {'required': False},
+        }
 
-    def get_image(self, obj):
-        if obj.image_url:
-            return obj.image_url
+    def get_display_image(self, obj):
+        # 1. Prefer explicitly provided image URL link
+        if obj.image_url and obj.image_url.strip():
+            url = obj.image_url.strip()
+            if url.startswith('http://'):
+                return url.replace('http://', 'https://')
+            return url
+        
+        # 2. Fall back to uploaded file served via HTTPS
         if obj.image:
-            request = self.context.get('request')
-            if request is not None:
-                return request.build_absolute_uri(obj.image.url)
-            return f"https://shopcore-backend-aapu.onrender.com{obj.image.url}"
+            try:
+                url = obj.image.url
+                if url.startswith('http://'):
+                    return url.replace('http://', 'https://')
+                if url.startswith('/'):
+                    return f"https://shopcore-backend-aapu.onrender.com{url}"
+                return url
+            except Exception:
+                return None
         return None

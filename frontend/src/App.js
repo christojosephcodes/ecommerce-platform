@@ -997,6 +997,11 @@ function Storefront({ onLogout }) {
 
   const { cart, addToCart, removeFromCart, updateQuantity, clearCart, totalAmount, totalItemCount } = useCart();
 
+  const getCheckoutHeaders = () => {
+    const token = localStorage.getItem('access_token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   const loadData = useCallback(async () => {
     try {
       const prodUrl = search.trim()
@@ -1061,23 +1066,11 @@ function Storefront({ onLogout }) {
   };
 
   const handleAddToCartWithToast = (product) => {
-    if (!authToken) {
-      setAuthMode('signin');
-      setIsAuthOpen(true);
-      showToast('Please sign in to add items to your cart.');
-      return;
-    }
     addToCart(product);
     showToast(`Added "${product.name}" to bag!`);
   };
 
   const handleOpenBuyNow = (product) => {
-    if (!authToken) {
-      setAuthMode('signin');
-      setIsAuthOpen(true);
-      showToast('Please sign in to complete your purchase.');
-      return;
-    }
     setBuyNowProduct(product);
     setBuyNowQty(1);
     setBuyNowPromoCode('');
@@ -1101,11 +1094,12 @@ function Storefront({ onLogout }) {
 
   const handleExecuteBuyNow = async (e) => {
     e.preventDefault();
-    if (!authToken || !buyNowProduct) return;
+    if (!buyNowProduct) return;
     setLoading(true);
 
     const payload = {
-      shipping_address: buyNowShippingAddress,
+      shipping_address: buyNowShippingAddress || 'Standard Delivery',
+      customer_name: currentUser || 'Guest Customer',
       items: [
         {
           product_id: buyNowProduct.id,
@@ -1116,18 +1110,18 @@ function Storefront({ onLogout }) {
 
     try {
       const res = await axios.post(`${API_BASE}orders/checkout/`, payload, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: getCheckoutHeaders(),
       });
       setOrderSuccess(res.data);
       setBuyNowProduct(null);
       if (quickViewProduct) setQuickViewProduct(null);
-      showToast(`Order #${res.data.id} placed directly!`);
+      showToast(`Order #${res.data.id} placed successfully!`);
 
       if (syncChannel) syncChannel.postMessage({ type: 'ORDER_PLACED' });
 
       loadData();
     } catch (err) {
-      alert(err.response?.data?.error || 'Direct purchase failed. Please check stock availability.');
+      alert(err.response?.data?.error || 'Purchase failed. Please check stock availability.');
     } finally {
       setLoading(false);
     }
@@ -1142,7 +1136,6 @@ function Storefront({ onLogout }) {
           password: password.trim(),
         });
 
-        showToast('Account created successfully!');
         const token = res.data.access;
         const userIsAdmin = Boolean(res.data.is_staff);
 
@@ -1153,9 +1146,10 @@ function Storefront({ onLogout }) {
         setCurrentUser(username.trim());
         setAuthToken(token);
         setIsAuthOpen(false);
+        showToast('Account created successfully!');
         window.location.reload();
       } catch (err) {
-        alert(err.response?.data?.error || 'Registration failed. Check your input.');
+        alert(err.response?.data?.error || 'Registration failed. Check your credentials.');
       }
     } else {
       try {
@@ -1174,6 +1168,7 @@ function Storefront({ onLogout }) {
         setCurrentUser(username.trim());
         setAuthToken(token);
         setIsAuthOpen(false);
+        showToast('Signed in successfully!');
         window.location.reload();
       } catch (err) {
         alert('Invalid credentials. Check username and password.');
@@ -1196,7 +1191,7 @@ function Storefront({ onLogout }) {
       setOrdersHistory(Array.isArray(res.data) ? res.data : res.data?.results || []);
       setIsHistoryOpen(true);
     } catch (err) {
-      alert('Could not retrieve orders. Please log in again.');
+      alert('Session expired. Please log in again.');
       onLogout();
     }
   };
@@ -1217,16 +1212,12 @@ function Storefront({ onLogout }) {
 
   const handleCheckout = async (e) => {
     e.preventDefault();
-    if (!authToken) {
-      setIsAuthOpen(true);
-      showToast('Sign in or register to complete your order.');
-      return;
-    }
     if (cart.length === 0) return;
     setLoading(true);
 
     const payload = {
-      shipping_address: shippingAddress,
+      shipping_address: shippingAddress || 'Standard Delivery',
+      customer_name: currentUser || 'Guest Customer',
       items: cart.map((item) => ({
         product_id: item.id,
         quantity: item.quantity,
@@ -1235,7 +1226,7 @@ function Storefront({ onLogout }) {
 
     try {
       const res = await axios.post(`${API_BASE}orders/checkout/`, payload, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: getCheckoutHeaders(),
       });
       setOrderSuccess(res.data);
       clearCart();
@@ -1322,15 +1313,7 @@ function Storefront({ onLogout }) {
         </div>
 
         <button
-          onClick={() => {
-            if (!authToken) {
-              setAuthMode('signin');
-              setIsAuthOpen(true);
-              showToast('Please sign in to view your bag.');
-              return;
-            }
-            setIsCartOpen(true);
-          }}
+          onClick={() => setIsCartOpen(true)}
           style={{ position: 'relative', background: '#2563eb', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600' }}
         >
           <ShoppingBag size={18} />
@@ -1510,7 +1493,7 @@ function Storefront({ onLogout }) {
                             gap: '4px'
                           }}
                         >
-                          {authToken ? <Plus size={14} /> : <Lock size={12} />} {authToken ? 'Add to Bag' : 'Sign in'}
+                          <Plus size={14} /> Add to Bag
                         </button>
 
                         <button
@@ -1543,7 +1526,7 @@ function Storefront({ onLogout }) {
         </div>
       </div>
 
-      {/* DIRECT "BUY NOW" MODAL */}
+      {/* DIRECT BUY NOW MODAL */}
       {buyNowProduct && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 90, padding: '20px' }}>
           <div style={{ background: '#ffffff', borderRadius: '16px', maxWidth: '460px', width: '100%', padding: '28px', color: '#0f172a', position: 'relative', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
@@ -1630,7 +1613,7 @@ function Storefront({ onLogout }) {
               <textarea
                 required
                 rows="2"
-                placeholder="Enter shipping delivery address..."
+                placeholder="Enter delivery shipping address..."
                 value={buyNowShippingAddress}
                 onChange={(e) => setBuyNowShippingAddress(e.target.value)}
                 style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box', outline: 'none', fontFamily: 'inherit', fontSize: '0.9rem' }}
@@ -1981,7 +1964,7 @@ function Storefront({ onLogout }) {
                   disabled={quickViewProduct.stock <= 0}
                   style={{ width: '100%', padding: '12px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
                 >
-                  {authToken ? 'Add to Bag' : 'Sign in'}
+                  Add to Bag
                 </button>
                 <button
                   onClick={() => handleOpenBuyNow(quickViewProduct)}

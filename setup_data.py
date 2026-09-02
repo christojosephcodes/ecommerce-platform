@@ -27,14 +27,28 @@ sample_products = [
         "description": "High-fidelity audio with active noise cancellation and 30-hour battery life.",
         "price": 199.99,
         "stock": 25,
-        "category_name": "Electronics"
+        "category_name": "Audio & Studio"
+    },
+    {
+        "name": "StudioGlide Desktop Condenser Mic",
+        "description": "Studio-grade USB condenser microphone with desktop shock mount and cardioid pattern.",
+        "price": 129.99,
+        "stock": 28,
+        "category_name": "Audio & Studio"
+    },
+    {
+        "name": "VibeBeam Portable Bluetooth Speaker",
+        "description": "Rugged outdoor stereo speaker with dual passive bass radiators and utility strap.",
+        "price": 149.00,
+        "stock": 30,
+        "category_name": "Audio & Studio"
     },
     {
         "name": "Mechanical Gaming Keyboard",
-        "description": "RGB backlit mechanical keyboard with hot-swappable switches.",
+        "description": "RGB backlit mechanical keyboard with hot-swappable tactile switches.",
         "price": 89.99,
         "stock": 40,
-        "category_name": "Electronics"
+        "category_name": "Computer Peripherals"
     },
     {
         "name": "Ergonomic Office Chair",
@@ -58,7 +72,7 @@ for p in sample_products:
         name=p["category_name"],
         defaults={"slug": cat_slug}
     )
-    
+
     prod_slug = slugify(p["name"])
     defaults_dict = {
         "description": p["description"],
@@ -66,7 +80,7 @@ for p in sample_products:
         "stock": p["stock"],
         "category": category_obj
     }
-    
+
     if hasattr(Product, 'slug'):
         defaults_dict["slug"] = prod_slug
 
@@ -76,3 +90,14 @@ for p in sample_products:
     )
     if created:
         print(f"Created product: {p['name']}")
+    else:
+        # Update existing records to ensure category and details are intact
+        obj.category = category_obj
+        obj.description = p["description"]
+        obj.price = p["price"]
+        obj.stock = p["stock"]
+        if hasattr(obj, 'slug') and not obj.slug:
+            obj.slug = prod_slug
+        obj.save()
+
+print("Initial catalog sync completed.")

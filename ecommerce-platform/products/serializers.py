@@ -12,12 +12,14 @@ class ProductSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Product
-        fields = ['id', 'category', 'category_name', 'name', 'slug', 'description', 'price', 'stock', 'image', 'created_at']
+        fields = ['id', 'category', 'category_name', 'name', 'slug', 'description', 'price', 'stock', 'image', 'image_url', 'created_at']
 
     def get_image(self, obj):
-        if not obj.image:
-            return None
-        request = self.context.get('request')
-        if request is not None:
-            return request.build_absolute_uri(obj.image.url)
-        return f"https://shopcore-backend-aapu.onrender.com{obj.image.url}"
+        if obj.image_url:
+            return obj.image_url
+        if obj.image:
+            request = self.context.get('request')
+            if request is not None:
+                return request.build_absolute_uri(obj.image.url)
+            return f"https://shopcore-backend-aapu.onrender.com{obj.image.url}"
+        return None

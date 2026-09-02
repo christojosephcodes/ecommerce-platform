@@ -109,6 +109,7 @@ function AdminDashboard({ onLogout, showToast }) {
   const [editCategory, setEditCategory] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editImage, setEditImage] = useState(null);
+  const [editImageUrl, setEditImageUrl] = useState('');
 
   // New Category Form State
   const [newCatName, setNewCatName] = useState('');
@@ -121,6 +122,7 @@ function AdminDashboard({ onLogout, showToast }) {
   const [prodStock, setProdStock] = useState('');
   const [prodDescription, setProdDescription] = useState('');
   const [prodImage, setProdImage] = useState(null);
+  const [prodImageUrl, setProdImageUrl] = useState('');
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('access_token');
@@ -236,6 +238,7 @@ function AdminDashboard({ onLogout, showToast }) {
     formData.append('description', prodDescription);
     if (prodCategory) formData.append('category', prodCategory);
     if (prodImage) formData.append('image', prodImage);
+    if (prodImageUrl) formData.append('image_url', prodImageUrl);
 
     try {
       const res = await axios.post(`${API_BASE}products/`, formData, {
@@ -251,6 +254,7 @@ function AdminDashboard({ onLogout, showToast }) {
       setProdStock('');
       setProdDescription('');
       setProdImage(null);
+      setProdImageUrl('');
       setActiveNavTab('inventory');
       if (syncChannel) syncChannel.postMessage({ type: 'CATALOG_UPDATED' });
     } catch (err) {
@@ -265,9 +269,10 @@ function AdminDashboard({ onLogout, showToast }) {
     setEditName(product.name);
     setEditPrice(product.price);
     setEditStock(product.stock);
-    setEditCategory(product.category?.id || (categories[0]?.id ?? ''));
+    setEditCategory(product.category || (categories[0]?.id ?? ''));
     setEditDescription(product.description || '');
     setEditImage(null);
+    setEditImageUrl(product.image_url || '');
   };
 
   const handleSaveEditProduct = async (e) => {
@@ -282,6 +287,7 @@ function AdminDashboard({ onLogout, showToast }) {
     formData.append('description', editDescription);
     if (editCategory) formData.append('category', editCategory);
     if (editImage) formData.append('image', editImage);
+    if (editImageUrl) formData.append('image_url', editImageUrl);
 
     try {
       const res = await axios.patch(`${API_BASE}products/${editingProduct.id}/`, formData, {
@@ -326,7 +332,6 @@ function AdminDashboard({ onLogout, showToast }) {
 
   return (
     <div style={{ minHeight: '100vh', background: '#0b1329', color: '#f8fafc', fontFamily: 'Inter, system-ui, sans-serif' }}>
-      {/* Top Header */}
       <header style={{ background: '#0f172a', borderBottom: '1px solid #1e293b', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{ background: '#1e293b', padding: '8px', borderRadius: '8px' }}>
@@ -346,7 +351,6 @@ function AdminDashboard({ onLogout, showToast }) {
       </header>
 
       <div style={{ maxWidth: '1180px', margin: '30px auto', padding: '0 20px' }}>
-        {/* Navigation Tabs */}
         <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', borderBottom: '1px solid #1e293b', paddingBottom: '12px', flexWrap: 'wrap' }}>
           <button
             onClick={() => setActiveNavTab('inventory')}
@@ -439,7 +443,6 @@ function AdminDashboard({ onLogout, showToast }) {
           </button>
         </div>
 
-        {/* Goods Inventory */}
         {activeNavTab === 'inventory' && (
           <div style={{ background: '#ffffff', borderRadius: '16px', color: '#0f172a', overflow: 'hidden', boxShadow: '0 10px 25px rgba(0,0,0,0.3)' }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
@@ -533,7 +536,6 @@ function AdminDashboard({ onLogout, showToast }) {
           </div>
         )}
 
-        {/* Active In-Transit Orders */}
         {activeNavTab === 'active_orders' && (
           <div style={{ background: '#ffffff', borderRadius: '16px', color: '#0f172a', overflow: 'hidden', boxShadow: '0 10px 25px rgba(0,0,0,0.3)' }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -592,7 +594,6 @@ function AdminDashboard({ onLogout, showToast }) {
           </div>
         )}
 
-        {/* Order History */}
         {activeNavTab === 'order_history' && (
           <div style={{ background: '#ffffff', borderRadius: '16px', color: '#0f172a', overflow: 'hidden', boxShadow: '0 10px 25px rgba(0,0,0,0.3)' }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -651,7 +652,6 @@ function AdminDashboard({ onLogout, showToast }) {
           </div>
         )}
 
-        {/* Add Product */}
         {activeNavTab === 'products' && (
           <div style={{ background: '#ffffff', borderRadius: '16px', color: '#0f172a', padding: '28px', maxWidth: '640px', margin: '0 auto', boxShadow: '0 10px 25px rgba(0,0,0,0.3)' }}>
             <h2 style={{ fontSize: '1.25rem', fontWeight: '800', margin: '0 0 18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -720,6 +720,17 @@ function AdminDashboard({ onLogout, showToast }) {
               </div>
 
               <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '6px' }}>Direct Image URL (Optional Fallback)</label>
+                <input
+                  type="url"
+                  placeholder="https://images.unsplash.com/photo-..."
+                  value={prodImageUrl}
+                  onChange={(e) => setProdImageUrl(e.target.value)}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
                 <label style={{ fontSize: '0.85rem', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '6px' }}>Description</label>
                 <textarea
                   rows="3"
@@ -741,7 +752,6 @@ function AdminDashboard({ onLogout, showToast }) {
           </div>
         )}
 
-        {/* Add Category */}
         {activeNavTab === 'categories' && (
           <div style={{ background: '#ffffff', borderRadius: '16px', color: '#0f172a', padding: '28px', maxWidth: '540px', margin: '0 auto', boxShadow: '0 10px 25px rgba(0,0,0,0.3)' }}>
             <h2 style={{ fontSize: '1.25rem', fontWeight: '800', margin: '0 0 18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -850,12 +860,23 @@ function AdminDashboard({ onLogout, showToast }) {
               </div>
 
               <div>
-                <label style={{ fontSize: '0.85rem', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Replace Image (Optional)</label>
+                <label style={{ fontSize: '0.85rem', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Replace Image File (Optional)</label>
                 <input
                   type="file"
                   accept="image/*"
                   onChange={(e) => setEditImage(e.target.files[0])}
                   style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Direct Image URL (Optional Fallback)</label>
+                <input
+                  type="url"
+                  placeholder="https://images.unsplash.com/photo-..."
+                  value={editImageUrl}
+                  onChange={(e) => setEditImageUrl(e.target.value)}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
 
@@ -1051,33 +1072,43 @@ function Storefront({ onLogout }) {
     e.preventDefault();
     if (authMode === 'signup') {
       try {
-        await axios.post(`${API_BASE}orders/register/`, { username, password });
-        showToast('Account created! Signing in...');
-
-        const res = await axios.post(`${API_BASE}token/`, { username, password });
+        const res = await axios.post(`${API_BASE}orders/register/`, {
+          username: username.trim(),
+          password: password.trim(),
+        });
+        
+        showToast('Account created successfully!');
+        const token = res.data.access;
         const userIsAdmin = Boolean(res.data.is_staff);
 
-        localStorage.setItem('access_token', res.data.access);
+        localStorage.setItem('access_token', token);
         localStorage.setItem('current_user', username);
         localStorage.setItem('is_admin', userIsAdmin);
 
         setCurrentUser(username);
-        setAuthToken(res.data.access);
+        setAuthToken(token);
+        setIsAuthOpen(false);
         window.location.reload();
       } catch (err) {
-        alert(err.response?.data?.error || 'Registration failed. Username may already be taken.');
+        alert(err.response?.data?.error || 'Registration failed. Check your input.');
       }
     } else {
       try {
-        const res = await axios.post(`${API_BASE}token/`, { username, password });
-        const userIsAdmin = Boolean(res.data.is_staff);
+        const res = await axios.post(`${API_BASE}token/`, {
+          username: username.trim(),
+          password: password.trim(),
+        });
 
-        localStorage.setItem('access_token', res.data.access);
+        const token = res.data.access;
+        const userIsAdmin = username === 'admin';
+
+        localStorage.setItem('access_token', token);
         localStorage.setItem('current_user', username);
         localStorage.setItem('is_admin', userIsAdmin);
 
         setCurrentUser(username);
-        setAuthToken(res.data.access);
+        setAuthToken(token);
+        setIsAuthOpen(false);
         window.location.reload();
       } catch (err) {
         alert('Invalid credentials. Check username and password.');

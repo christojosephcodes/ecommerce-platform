@@ -1,6 +1,7 @@
 from rest_framework import views, generics, permissions, status
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.tokens import RefreshToken
 from .models import Order, OrderItem
 from .serializers import OrderSerializer
 from products.models import Product
@@ -9,23 +10,36 @@ User = get_user_model()
 
 class RegisterView(views.APIView):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []
 
     def post(self, request):
-        username = request.data.get('username')
-        password = request.data.get('password')
+        username = request.data.get('username', '').strip()
+        password = request.data.get('password', '').strip()
+
         if not username or not password:
-            return Response({'error': 'Username and password are required'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Username and password are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
         if User.objects.filter(username=username).exists():
-            return Response({'error': 'Username is already taken'}, status=status.HTTP_400_BAD_REQUEST)
-        User.objects.create_user(username=username, password=password)
-        return Response({'message': 'User registered successfully'}, status=status.HTTP_201_CREATED)
+            return Response({'error': 'Username is already taken.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.create_user(username=username, password=password)
+        
+        # Issue JWT tokens directly upon successful sign up
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'message': 'Account created successfully!',
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+            'username': user.username,
+            'is_staff': user.is_staff
+        }, status=status.HTTP_201_CREATED)
 
 class CheckoutView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
         items_data = request.data.get('items', [])
-        shipping_address = request.data.get('shipping_address', 'Default Address')
+        shipping_address = request.data.get('shipping_address', 'Standard Delivery')
         if not items_data:
             return Response({'error': 'No items in order'}, status=status.HTTP_400_BAD_REQUEST)
 

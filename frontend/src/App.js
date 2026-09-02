@@ -51,6 +51,14 @@ function formatImageUrl(item) {
   return trimmed;
 }
 
+function normalizeCategory(val) {
+  if (!val) return '';
+  return String(val)
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]/g, '');
+}
+
 function getStatusBadgeColor(status) {
   switch (status) {
     case 'Ordered':
@@ -1255,10 +1263,13 @@ function Storefront({ onLogout }) {
   const filteredProducts = (Array.isArray(products) ? products : [])
     .filter(p => {
       if (selectedCategory === 'all') return true;
-      const catSlug = p.category?.slug?.toLowerCase();
-      const catName = (p.category_name || p.category?.name || '').toLowerCase();
-      const target = selectedCategory.toLowerCase();
-      return catSlug === target || catName === target;
+      const target = normalizeCategory(selectedCategory);
+      
+      const prodCatName = normalizeCategory(p.category_name || p.category?.name);
+      const prodCatSlug = normalizeCategory(p.category?.slug || p.slug);
+      const matchesId = String(p.category) === String(selectedCategory) || String(p.category?.id) === String(selectedCategory);
+
+      return prodCatName === target || prodCatSlug === target || matchesId;
     })
     .sort((a, b) => {
       if (sortBy === 'price-low') return parseFloat(a.price) - parseFloat(b.price);
@@ -1345,24 +1356,32 @@ function Storefront({ onLogout }) {
             >
               All Products
             </button>
-            {categories.map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => setSelectedCategory(cat.slug || cat.name)}
-                style={{
-                  padding: '8px 18px',
-                  borderRadius: '24px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontWeight: '600',
-                  fontSize: '0.9rem',
-                  background: (selectedCategory.toLowerCase() === (cat.slug || cat.name).toLowerCase()) ? '#0f172a' : '#e2e8f0',
-                  color: (selectedCategory.toLowerCase() === (cat.slug || cat.name).toLowerCase()) ? '#ffffff' : '#475569',
-                }}
-              >
-                {cat.name}
-              </button>
-            ))}
+            {categories.map((cat) => {
+              const isSelected = selectedCategory !== 'all' && (
+                normalizeCategory(selectedCategory) === normalizeCategory(cat.name) ||
+                normalizeCategory(selectedCategory) === normalizeCategory(cat.slug) ||
+                String(selectedCategory) === String(cat.id)
+              );
+
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.name)}
+                  style={{
+                    padding: '8px 18px',
+                    borderRadius: '24px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontWeight: '600',
+                    fontSize: '0.9rem',
+                    background: isSelected ? '#0f172a' : '#e2e8f0',
+                    color: isSelected ? '#ffffff' : '#475569',
+                  }}
+                >
+                  {cat.name}
+                </button>
+              );
+            })}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

@@ -37,6 +37,19 @@ const syncChannel = typeof window !== 'undefined' && window.BroadcastChannel ? n
 
 const STATUS_STAGES = ['Ordered', 'Preparing Shipment', 'Out for Delivery', 'Delivered'];
 
+// Ensures images load securely over HTTPS to avoid Vercel mixed-content blocking
+function formatImageUrl(url) {
+  if (!url) return null;
+  if (typeof url !== 'string') return null;
+  if (url.startsWith('http://')) {
+    return url.replace('http://', 'https://');
+  }
+  if (url.startsWith('/')) {
+    return `https://shopcore-backend-aapu.onrender.com${url}`;
+  }
+  return url;
+}
+
 function getStatusBadgeColor(status) {
   switch (status) {
     case 'Ordered':
@@ -132,7 +145,7 @@ function AdminDashboard({ onLogout, showToast }) {
   const fetchOrders = useCallback(async () => {
     try {
       const res = await axios.get(`${API_BASE}orders/admin/orders/`, { headers: getAuthHeaders() });
-      setAdminOrders(res.data);
+      setAdminOrders(Array.isArray(res.data) ? res.data : res.data?.results || []);
     } catch (err) {
       if (err.response?.status === 401) {
         onLogout();
@@ -142,10 +155,16 @@ function AdminDashboard({ onLogout, showToast }) {
 
   const fetchCategories = useCallback(async () => {
     try {
-      const res = await axios.get(`${API_BASE}products/categories/`);
-      setCategories(res.data);
-      if (res.data.length > 0 && !prodCategory) {
-        setProdCategory(res.data[0].id);
+      let res;
+      try {
+        res = await axios.get(`${API_BASE}products/categories/`);
+      } catch {
+        res = await axios.get(`${API_BASE}categories/`);
+      }
+      const data = Array.isArray(res.data) ? res.data : res.data?.results || [];
+      setCategories(data);
+      if (data.length > 0 && !prodCategory) {
+        setProdCategory(data[0].id);
       }
     } catch (err) {
       console.error('Error fetching categories:', err);
@@ -155,14 +174,15 @@ function AdminDashboard({ onLogout, showToast }) {
   const fetchProducts = useCallback(async () => {
     try {
       const res = await axios.get(`${API_BASE}products/`);
-      setProducts(res.data);
+      const list = Array.isArray(res.data) ? res.data : res.data?.results || [];
+      setProducts(list);
     } catch (err) {
       console.error('Error fetching inventory products:', err);
     }
   }, []);
 
   const refreshDashboardData = useCallback(async () => {
-    await Promise.all([fetchOrders(), fetchProducts(), fetchCategories()]);
+    await Promise.allSettled([fetchOrders(), fetchProducts(), fetchCategories()]);
   }, [fetchOrders, fetchProducts, fetchCategories]);
 
   useEffect(() => {
@@ -215,7 +235,12 @@ function AdminDashboard({ onLogout, showToast }) {
     if (!newCatName) return;
     try {
       const slug = newCatSlug || newCatName.toLowerCase().replace(/\s+/g, '-');
-      const res = await axios.post(`${API_BASE}products/categories/`, { name: newCatName, slug }, { headers: getAuthHeaders() });
+      let res;
+      try {
+        res = await axios.post(`${API_BASE}products/categories/`, { name: newCatName, slug }, { headers: getAuthHeaders() });
+      } catch {
+        res = await axios.post(`${API_BASE}categories/`, { name: newCatName, slug }, { headers: getAuthHeaders() });
+      }
       setCategories([...categories, res.data]);
       setNewCatName('');
       setNewCatSlug('');
@@ -325,7 +350,7 @@ function AdminDashboard({ onLogout, showToast }) {
   const deliveredOrders = adminOrders.filter(o => o.status === 'Delivered' || o.status === 'Cancelled');
 
   const filteredInventory = products.filter(p =>
-    p.name.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+    p.name?.toLowerCase().includes(inventorySearch.toLowerCase()) ||
     (p.category_name && p.category_name.toLowerCase().includes(inventorySearch.toLowerCase())) ||
     (p.category?.name && p.category.name.toLowerCase().includes(inventorySearch.toLowerCase()))
   );
@@ -486,8 +511,17 @@ function AdminDashboard({ onLogout, showToast }) {
                       <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                         <td style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
                           <div style={{ width: '48px', height: '48px', borderRadius: '8px', background: '#f1f5f9', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1px solid #e2e8f0' }}>
-                            {item.image ? (
-                              <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            {formatImageUrl(item.image || item.image_url) ? (
+                              <img
+                                src={formatImageUrl(item.image || item.image_url)}
+                                alt={item.name}
+                                onError={(e) => {
+                                  e.target.onerror = null;
+                                  e.target.style.display = 'none';
+                                  e.target.parentElement.innerHTML = '📦';
+                                }}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              />
                             ) : (
                               <Package size={22} color="#94a3b8" />
                             )}
@@ -960,13 +994,44 @@ function Storefront({ onLogout }) {
   const { cart, addToCart, removeFromCart, updateQuantity, clearCart, totalAmount, totalItemCount } = useCart();
 
   const loadData = useCallback(async () => {
+    // 1. Fetch Products safely
     try {
-      const [catRes, prodRes] = await Promise.all([
-        axios.get(`${API_BASE}products/categories/`),
-        axios.get(`${API_BASE}products/?search=${search}`)
-      ]);
-      setCategories(catRes.data);
-      setProducts(prodRes.data);
+      const prodUrl = search.trim()
+        ? `${API_BASE}products/?search=${encodeURIComponent(search.trim())}`
+        : `${API_BASE}products/`;
+      const prodRes = await axios.get(prodUrl);
+      const prodList = Array.isArray(prodRes.data) ? prodRes.data : prodRes.data?.results || [];
+      setProducts(prodList);
+
+      // 2. Fetch Categories with Fallback
+      try {
+        let catRes;
+        try {
+          catRes = await axios.get(`${API_BASE}products/categories/`);
+        } catch {
+          catRes = await axios.get(`${API_BASE}categories/`);
+        }
+        const catList = Array.isArray(catRes.data) ? catRes.data : catRes.data?.results || [];
+        if (catList.length > 0) {
+          setCategories(catList);
+        } else {
+          // Derive categories directly from products if API endpoint has no records
+          const derived = [...new Set(prodList.map(p => p.category_name).filter(Boolean))].map((cName, idx) => ({
+            id: idx + 1,
+            name: cName,
+            slug: cName.toLowerCase().replace(/\s+/g, '-')
+          }));
+          setCategories(derived);
+        }
+      } catch {
+        // Fallback: derive categories from products
+        const derived = [...new Set(prodList.map(p => p.category_name).filter(Boolean))].map((cName, idx) => ({
+          id: idx + 1,
+          name: cName,
+          slug: cName.toLowerCase().replace(/\s+/g, '-')
+        }));
+        setCategories(derived);
+      }
     } catch (err) {
       console.error('Catalog load error:', err);
     }
@@ -1076,16 +1141,16 @@ function Storefront({ onLogout }) {
           username: username.trim(),
           password: password.trim(),
         });
-        
+
         showToast('Account created successfully!');
         const token = res.data.access;
         const userIsAdmin = Boolean(res.data.is_staff);
 
         localStorage.setItem('access_token', token);
-        localStorage.setItem('current_user', username);
+        localStorage.setItem('current_user', username.trim());
         localStorage.setItem('is_admin', userIsAdmin);
 
-        setCurrentUser(username);
+        setCurrentUser(username.trim());
         setAuthToken(token);
         setIsAuthOpen(false);
         window.location.reload();
@@ -1100,13 +1165,13 @@ function Storefront({ onLogout }) {
         });
 
         const token = res.data.access;
-        const userIsAdmin = username === 'admin';
+        const userIsAdmin = username.trim() === 'admin';
 
         localStorage.setItem('access_token', token);
-        localStorage.setItem('current_user', username);
+        localStorage.setItem('current_user', username.trim());
         localStorage.setItem('is_admin', userIsAdmin);
 
-        setCurrentUser(username);
+        setCurrentUser(username.trim());
         setAuthToken(token);
         setIsAuthOpen(false);
         window.location.reload();
@@ -1128,7 +1193,7 @@ function Storefront({ onLogout }) {
       const res = await axios.get(`${API_BASE}orders/my-orders/`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
-      setOrdersHistory(res.data);
+      setOrdersHistory(Array.isArray(res.data) ? res.data : res.data?.results || []);
       setIsHistoryOpen(true);
     } catch (err) {
       alert('Could not retrieve orders. Please log in again.');
@@ -1196,8 +1261,15 @@ function Storefront({ onLogout }) {
   const buyNowDiscountAmount = buyNowRawSubtotal * (buyNowDiscountPercent / 100);
   const buyNowFinalTotal = (buyNowRawSubtotal - buyNowDiscountAmount).toFixed(2);
 
-  const filteredProducts = products
-    .filter(p => selectedCategory === 'all' || p.category?.slug === selectedCategory || (p.category_name && p.category_name.toLowerCase() === selectedCategory.toLowerCase()) || (p.category?.name && p.category.name.toLowerCase() === selectedCategory.toLowerCase()))
+  // Normalization logic so categories match whether stored by string, slug, or object
+  const filteredProducts = (Array.isArray(products) ? products : [])
+    .filter(p => {
+      if (selectedCategory === 'all') return true;
+      const catSlug = p.category?.slug?.toLowerCase();
+      const catName = (p.category_name || p.category?.name || '').toLowerCase();
+      const target = selectedCategory.toLowerCase();
+      return catSlug === target || catName === target;
+    })
     .sort((a, b) => {
       if (sortBy === 'price-low') return parseFloat(a.price) - parseFloat(b.price);
       if (sortBy === 'price-high') return parseFloat(b.price) - parseFloat(a.price);
@@ -1275,7 +1347,7 @@ function Storefront({ onLogout }) {
       {/* Main Catalog Grid */}
       <div style={{ maxWidth: '1280px', margin: '32px auto', padding: '0 24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '28px' }}>
-          <div style={{ display: 'flex', gap: '10px', overflowX: 'auto' }}>
+          <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', flexWrap: 'wrap' }}>
             <button
               onClick={() => setSelectedCategory('all')}
               style={{
@@ -1302,8 +1374,8 @@ function Storefront({ onLogout }) {
                   cursor: 'pointer',
                   fontWeight: '600',
                   fontSize: '0.9rem',
-                  background: selectedCategory === (cat.slug || cat.name) ? '#0f172a' : '#e2e8f0',
-                  color: selectedCategory === (cat.slug || cat.name) ? '#ffffff' : '#475569',
+                  background: (selectedCategory.toLowerCase() === (cat.slug || cat.name).toLowerCase()) ? '#0f172a' : '#e2e8f0',
+                  color: (selectedCategory.toLowerCase() === (cat.slug || cat.name).toLowerCase()) ? '#ffffff' : '#475569',
                 }}
               >
                 {cat.name}
@@ -1349,112 +1421,125 @@ function Storefront({ onLogout }) {
               <p>Try clearing filters or searching for another keyword.</p>
             </div>
           ) : (
-            filteredProducts.map((product) => (
-              <div
-                key={product.id}
-                style={{
-                  background: '#ffffff',
-                  borderRadius: '16px',
-                  border: '1px solid #e2e8f0',
-                  overflow: 'hidden',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
-                  position: 'relative'
-                }}
-              >
-                <div style={{ height: '220px', background: '#f1f5f9', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {product.image ? (
-                    <img src={product.image} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    <Package size={52} color="#94a3b8" />
-                  )}
-                  {product.stock <= 10 && product.stock >= 5 && (
-                    <span style={{ position: 'absolute', top: '12px', left: '12px', background: '#fef3c7', color: '#92400e', fontSize: '0.75rem', fontWeight: '700', padding: '4px 8px', borderRadius: '6px' }}>
-                      Low Stock ({product.stock})
-                    </span>
-                  )}
-                  {product.stock < 5 && product.stock > 0 && (
-                    <span style={{ position: 'absolute', top: '12px', left: '12px', background: '#ffedd5', color: '#c2410c', fontSize: '0.75rem', fontWeight: '700', padding: '4px 8px', borderRadius: '6px', border: '1px solid #fdba74' }}>
-                      Only {product.stock} Left!
-                    </span>
-                  )}
-                  {product.stock === 0 && (
-                    <span style={{ position: 'absolute', top: '12px', left: '12px', background: '#fee2e2', color: '#b91c1c', fontSize: '0.75rem', fontWeight: '700', padding: '4px 8px', borderRadius: '6px' }}>
-                      Sold Out
-                    </span>
-                  )}
-
-                  <button
-                    onClick={() => setQuickViewProduct(product)}
-                    style={{ position: 'absolute', bottom: '12px', right: '12px', background: 'rgba(255, 255, 255, 0.95)', border: 'none', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: '600', color: '#0f172a', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
-                  >
-                    <Eye size={14} /> Quick View
-                  </button>
-                </div>
-
-                <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
-                  <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    {product.category_name || product.category?.name || 'General'}
-                  </span>
-                  <h3 style={{ margin: '8px 0 6px', fontSize: '1.15rem', fontWeight: '700' }}>{product.name}</h3>
-                  <p style={{ color: '#64748b', fontSize: '0.875rem', flexGrow: 1, margin: '0 0 16px', lineHeight: '1.4' }}>
-                    {product.description || 'Premium quality verified.'}
-                  </p>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: 'auto', paddingTop: '12px', borderTop: '1px solid #f1f5f9' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                      <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Price</span>
-                      <span style={{ fontSize: '1.35rem', fontWeight: '800', color: '#0f172a' }}>${product.price}</span>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                      <button
-                        onClick={() => handleAddToCartWithToast(product)}
-                        disabled={product.stock <= 0}
-                        style={{
-                          padding: '10px 8px',
-                          background: product.stock > 0 ? '#0f172a' : '#cbd5e1',
-                          color: '#ffffff',
-                          border: 'none',
-                          borderRadius: '8px',
-                          cursor: product.stock > 0 ? 'pointer' : 'not-allowed',
-                          fontWeight: '600',
-                          fontSize: '0.85rem',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '4px'
+            filteredProducts.map((product) => {
+              const productImg = formatImageUrl(product.image || product.image_url);
+              return (
+                <div
+                  key={product.id}
+                  style={{
+                    background: '#ffffff',
+                    borderRadius: '16px',
+                    border: '1px solid #e2e8f0',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+                    position: 'relative'
+                  }}
+                >
+                  <div style={{ height: '220px', background: '#f1f5f9', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {productImg ? (
+                      <img
+                        src={productImg}
+                        alt={product.name}
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.style.display = 'none';
+                          e.target.parentElement.innerHTML = '📦';
                         }}
-                      >
-                        {authToken ? <Plus size={14} /> : <Lock size={12} />} {authToken ? 'Add to Bag' : 'Sign in'}
-                      </button>
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    ) : (
+                      <Package size={52} color="#94a3b8" />
+                    )}
 
-                      <button
-                        onClick={() => handleOpenBuyNow(product)}
-                        disabled={product.stock <= 0}
-                        style={{
-                          padding: '10px 8px',
-                          background: product.stock > 0 ? '#2563eb' : '#e2e8f0',
-                          color: product.stock > 0 ? '#ffffff' : '#94a3b8',
-                          border: 'none',
-                          borderRadius: '8px',
-                          cursor: product.stock > 0 ? 'pointer' : 'not-allowed',
-                          fontWeight: '700',
-                          fontSize: '0.85rem',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '4px'
-                        }}
-                      >
-                        <Zap size={14} /> Buy Now
-                      </button>
+                    {product.stock <= 10 && product.stock >= 5 && (
+                      <span style={{ position: 'absolute', top: '12px', left: '12px', background: '#fef3c7', color: '#92400e', fontSize: '0.75rem', fontWeight: '700', padding: '4px 8px', borderRadius: '6px' }}>
+                        Low Stock ({product.stock})
+                      </span>
+                    )}
+                    {product.stock < 5 && product.stock > 0 && (
+                      <span style={{ position: 'absolute', top: '12px', left: '12px', background: '#ffedd5', color: '#c2410c', fontSize: '0.75rem', fontWeight: '700', padding: '4px 8px', borderRadius: '6px', border: '1px solid #fdba74' }}>
+                        Only {product.stock} Left!
+                      </span>
+                    )}
+                    {product.stock === 0 && (
+                      <span style={{ position: 'absolute', top: '12px', left: '12px', background: '#fee2e2', color: '#b91c1c', fontSize: '0.75rem', fontWeight: '700', padding: '4px 8px', borderRadius: '6px' }}>
+                        Sold Out
+                      </span>
+                    )}
+
+                    <button
+                      onClick={() => setQuickViewProduct(product)}
+                      style={{ position: 'absolute', bottom: '12px', right: '12px', background: 'rgba(255, 255, 255, 0.95)', border: 'none', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: '600', color: '#0f172a', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
+                    >
+                      <Eye size={14} /> Quick View
+                    </button>
+                  </div>
+
+                  <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      {product.category_name || product.category?.name || 'General'}
+                    </span>
+                    <h3 style={{ margin: '8px 0 6px', fontSize: '1.15rem', fontWeight: '700' }}>{product.name}</h3>
+                    <p style={{ color: '#64748b', fontSize: '0.875rem', flexGrow: 1, margin: '0 0 16px', lineHeight: '1.4' }}>
+                      {product.description || 'Premium quality verified.'}
+                    </p>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: 'auto', paddingTop: '12px', borderTop: '1px solid #f1f5f9' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Price</span>
+                        <span style={{ fontSize: '1.35rem', fontWeight: '800', color: '#0f172a' }}>${product.price}</span>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <button
+                          onClick={() => handleAddToCartWithToast(product)}
+                          disabled={product.stock <= 0}
+                          style={{
+                            padding: '10px 8px',
+                            background: product.stock > 0 ? '#0f172a' : '#cbd5e1',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '8px',
+                            cursor: product.stock > 0 ? 'pointer' : 'not-allowed',
+                            fontWeight: '600',
+                            fontSize: '0.85rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          {authToken ? <Plus size={14} /> : <Lock size={12} />} {authToken ? 'Add to Bag' : 'Sign in'}
+                        </button>
+
+                        <button
+                          onClick={() => handleOpenBuyNow(product)}
+                          disabled={product.stock <= 0}
+                          style={{
+                            padding: '10px 8px',
+                            background: product.stock > 0 ? '#2563eb' : '#e2e8f0',
+                            color: product.stock > 0 ? '#ffffff' : '#94a3b8',
+                            border: 'none',
+                            borderRadius: '8px',
+                            cursor: product.stock > 0 ? 'pointer' : 'not-allowed',
+                            fontWeight: '700',
+                            fontSize: '0.85rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <Zap size={14} /> Buy Now
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
@@ -1480,8 +1565,8 @@ function Storefront({ onLogout }) {
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
               <div style={{ width: '54px', height: '54px', borderRadius: '8px', background: '#fff', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #e2e8f0', flexShrink: 0 }}>
-                {buyNowProduct.image ? (
-                  <img src={buyNowProduct.image} alt={buyNowProduct.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                {formatImageUrl(buyNowProduct.image || buyNowProduct.image_url) ? (
+                  <img src={formatImageUrl(buyNowProduct.image || buyNowProduct.image_url)} alt={buyNowProduct.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
                   <Package size={24} color="#94a3b8" />
                 )}
@@ -1808,7 +1893,7 @@ function Storefront({ onLogout }) {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 70, padding: '20px' }}>
           <div style={{ background: '#fff', borderRadius: '16px', maxWidth: '380px', width: '100%', padding: '28px', position: 'relative' }}>
             <button onClick={() => setIsAuthOpen(false)} style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
-            
+
             <h3 style={{ margin: '0 0 6px', fontSize: '1.3rem' }}>
               {authMode === 'signup' ? 'Create an Account' : 'Sign In to ShopCore'}
             </h3>
@@ -1865,7 +1950,20 @@ function Storefront({ onLogout }) {
           <div style={{ background: '#fff', borderRadius: '16px', maxWidth: '680px', width: '100%', overflow: 'hidden', display: 'grid', gridTemplateColumns: '1fr 1fr', position: 'relative' }}>
             <button onClick={() => setQuickViewProduct(null)} style={{ position: 'absolute', top: '16px', right: '16px', background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={18} /></button>
             <div style={{ background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-              {quickViewProduct.image ? <img src={quickViewProduct.image} alt={quickViewProduct.name} style={{ maxWidth: '100%', maxHeight: '280px', objectFit: 'contain' }} /> : <Package size={64} color="#94a3b8" />}
+              {formatImageUrl(quickViewProduct.image || quickViewProduct.image_url) ? (
+                <img
+                  src={formatImageUrl(quickViewProduct.image || quickViewProduct.image_url)}
+                  alt={quickViewProduct.name}
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.style.display = 'none';
+                    e.target.parentElement.innerHTML = '📦';
+                  }}
+                  style={{ maxWidth: '100%', maxHeight: '280px', objectFit: 'contain' }}
+                />
+              ) : (
+                <Package size={64} color="#94a3b8" />
+              )}
             </div>
             <div style={{ padding: '28px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
               <div>

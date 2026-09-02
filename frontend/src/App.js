@@ -37,17 +37,18 @@ const syncChannel = typeof window !== 'undefined' && window.BroadcastChannel ? n
 
 const STATUS_STAGES = ['Ordered', 'Preparing Shipment', 'Out for Delivery', 'Delivered'];
 
-// Ensures images load securely over HTTPS to avoid Vercel mixed-content blocking
-function formatImageUrl(url) {
-  if (!url) return null;
-  if (typeof url !== 'string') return null;
-  if (url.startsWith('http://')) {
-    return url.replace('http://', 'https://');
+function formatImageUrl(item) {
+  if (!item) return null;
+  const raw = item.display_image || item.image_url || item.image;
+  if (!raw || typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('http://')) {
+    return trimmed.replace('http://', 'https://');
   }
-  if (url.startsWith('/')) {
-    return `https://shopcore-backend-aapu.onrender.com${url}`;
+  if (trimmed.startsWith('/')) {
+    return `https://shopcore-backend-aapu.onrender.com${trimmed}`;
   }
-  return url;
+  return trimmed;
 }
 
 function getStatusBadgeColor(status) {
@@ -263,7 +264,7 @@ function AdminDashboard({ onLogout, showToast }) {
     formData.append('description', prodDescription);
     if (prodCategory) formData.append('category', prodCategory);
     if (prodImage) formData.append('image', prodImage);
-    if (prodImageUrl) formData.append('image_url', prodImageUrl);
+    if (prodImageUrl && prodImageUrl.trim()) formData.append('image_url', prodImageUrl.trim());
 
     try {
       const res = await axios.post(`${API_BASE}products/`, formData, {
@@ -312,7 +313,7 @@ function AdminDashboard({ onLogout, showToast }) {
     formData.append('description', editDescription);
     if (editCategory) formData.append('category', editCategory);
     if (editImage) formData.append('image', editImage);
-    if (editImageUrl) formData.append('image_url', editImageUrl);
+    if (editImageUrl && editImageUrl.trim()) formData.append('image_url', editImageUrl.trim());
 
     try {
       const res = await axios.patch(`${API_BASE}products/${editingProduct.id}/`, formData, {
@@ -507,62 +508,65 @@ function AdminDashboard({ onLogout, showToast }) {
                       </td>
                     </tr>
                   ) : (
-                    filteredInventory.map((item) => (
-                      <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-                          <div style={{ width: '48px', height: '48px', borderRadius: '8px', background: '#f1f5f9', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1px solid #e2e8f0' }}>
-                            {formatImageUrl(item.image || item.image_url) ? (
-                              <img
-                                src={formatImageUrl(item.image || item.image_url)}
-                                alt={item.name}
-                                onError={(e) => {
-                                  e.target.onerror = null;
-                                  e.target.style.display = 'none';
-                                  e.target.parentElement.innerHTML = '📦';
-                                }}
-                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                              />
-                            ) : (
-                              <Package size={22} color="#94a3b8" />
-                            )}
-                          </div>
-                          <div>
-                            <strong style={{ display: 'block', color: '#0f172a' }}>{item.name}</strong>
-                            <span style={{ fontSize: '0.75rem', color: '#64748b' }}>ID: #{item.id}</span>
-                          </div>
-                        </td>
-                        <td style={{ padding: '16px 20px', color: '#475569', fontWeight: '600' }}>
-                          {item.category_name || item.category?.name || 'Unassigned'}
-                        </td>
-                        <td style={{ padding: '16px 20px', fontWeight: '700', color: '#0f172a' }}>
-                          ${item.price}
-                        </td>
-                        <td style={{ padding: '16px 20px' }}>
-                          <span style={{ fontWeight: '800', fontSize: '1rem', color: getStockNumberColor(item.stock) }}>
-                            {item.stock} units
-                          </span>
-                        </td>
-                        <td style={{ padding: '16px 20px' }}>
-                          {getStockBadge(item.stock)}
-                        </td>
-                        <td style={{ padding: '16px 20px', textAlign: 'right' }}>
-                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                            <button
-                              onClick={() => handleOpenEdit(item)}
-                              style={{ padding: '6px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', color: '#2563eb', cursor: 'pointer', fontWeight: '600', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <Edit2 size={14} /> Edit
-                            </button>
-                            <button
-                              onClick={() => handleDeleteProduct(item.id, item.name)}
-                              style={{ padding: '6px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', color: '#dc2626', cursor: 'pointer', fontWeight: '600', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <Trash2 size={14} /> Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                    filteredInventory.map((item) => {
+                      const imgSource = formatImageUrl(item);
+                      return (
+                        <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+                            <div style={{ width: '48px', height: '48px', borderRadius: '8px', background: '#f1f5f9', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1px solid #e2e8f0' }}>
+                              {imgSource ? (
+                                <img
+                                  src={imgSource}
+                                  alt={item.name}
+                                  onError={(e) => {
+                                    e.target.onerror = null;
+                                    e.target.style.display = 'none';
+                                    if (e.target.parentElement) e.target.parentElement.innerHTML = '📦';
+                                  }}
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                />
+                              ) : (
+                                <Package size={22} color="#94a3b8" />
+                              )}
+                            </div>
+                            <div>
+                              <strong style={{ display: 'block', color: '#0f172a' }}>{item.name}</strong>
+                              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>ID: #{item.id}</span>
+                            </div>
+                          </td>
+                          <td style={{ padding: '16px 20px', color: '#475569', fontWeight: '600' }}>
+                            {item.category_name || item.category?.name || 'Unassigned'}
+                          </td>
+                          <td style={{ padding: '16px 20px', fontWeight: '700', color: '#0f172a' }}>
+                            ${item.price}
+                          </td>
+                          <td style={{ padding: '16px 20px' }}>
+                            <span style={{ fontWeight: '800', fontSize: '1rem', color: getStockNumberColor(item.stock) }}>
+                              {item.stock} units
+                            </span>
+                          </td>
+                          <td style={{ padding: '16px 20px' }}>
+                            {getStockBadge(item.stock)}
+                          </td>
+                          <td style={{ padding: '16px 20px', textAlign: 'right' }}>
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                              <button
+                                onClick={() => handleOpenEdit(item)}
+                                style={{ padding: '6px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', color: '#2563eb', cursor: 'pointer', fontWeight: '600', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                              >
+                                <Edit2 size={14} /> Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeleteProduct(item.id, item.name)}
+                                style={{ padding: '6px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', color: '#dc2626', cursor: 'pointer', fontWeight: '600', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                              >
+                                <Trash2 size={14} /> Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -744,23 +748,23 @@ function AdminDashboard({ onLogout, showToast }) {
               </div>
 
               <div>
-                <label style={{ fontSize: '0.85rem', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '6px' }}>Product Image File</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setProdImage(e.target.files[0])}
-                  style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.85rem', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '6px' }}>Direct Image URL (Optional Fallback)</label>
+                <label style={{ fontSize: '0.85rem', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '6px' }}>Direct Image URL (Recommended)</label>
                 <input
                   type="url"
                   placeholder="https://images.unsplash.com/photo-..."
                   value={prodImageUrl}
                   onChange={(e) => setProdImageUrl(e.target.value)}
                   style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '6px' }}>Upload File (Optional)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setProdImage(e.target.files[0])}
+                  style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc' }}
                 />
               </div>
 
@@ -841,7 +845,7 @@ function AdminDashboard({ onLogout, showToast }) {
               <Edit2 color="#2563eb" size={20} /> Edit Product #{editingProduct.id}
             </h3>
             <p style={{ color: '#64748b', fontSize: '0.85rem', margin: '0 0 18px' }}>
-              Update stock quantities, pricing, or product descriptions.
+              Update stock quantities, pricing, image URLs, or product descriptions.
             </p>
 
             <form onSubmit={handleSaveEditProduct} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -894,23 +898,23 @@ function AdminDashboard({ onLogout, showToast }) {
               </div>
 
               <div>
-                <label style={{ fontSize: '0.85rem', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Replace Image File (Optional)</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setEditImage(e.target.files[0])}
-                  style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.85rem', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Direct Image URL (Optional Fallback)</label>
+                <label style={{ fontSize: '0.85rem', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Direct Image URL</label>
                 <input
                   type="url"
                   placeholder="https://images.unsplash.com/photo-..."
                   value={editImageUrl}
                   onChange={(e) => setEditImageUrl(e.target.value)}
                   style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Replace Image File (Optional)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setEditImage(e.target.files[0])}
+                  style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc' }}
                 />
               </div>
 
@@ -994,7 +998,6 @@ function Storefront({ onLogout }) {
   const { cart, addToCart, removeFromCart, updateQuantity, clearCart, totalAmount, totalItemCount } = useCart();
 
   const loadData = useCallback(async () => {
-    // 1. Fetch Products safely
     try {
       const prodUrl = search.trim()
         ? `${API_BASE}products/?search=${encodeURIComponent(search.trim())}`
@@ -1003,7 +1006,6 @@ function Storefront({ onLogout }) {
       const prodList = Array.isArray(prodRes.data) ? prodRes.data : prodRes.data?.results || [];
       setProducts(prodList);
 
-      // 2. Fetch Categories with Fallback
       try {
         let catRes;
         try {
@@ -1015,7 +1017,6 @@ function Storefront({ onLogout }) {
         if (catList.length > 0) {
           setCategories(catList);
         } else {
-          // Derive categories directly from products if API endpoint has no records
           const derived = [...new Set(prodList.map(p => p.category_name).filter(Boolean))].map((cName, idx) => ({
             id: idx + 1,
             name: cName,
@@ -1024,7 +1025,6 @@ function Storefront({ onLogout }) {
           setCategories(derived);
         }
       } catch {
-        // Fallback: derive categories from products
         const derived = [...new Set(prodList.map(p => p.category_name).filter(Boolean))].map((cName, idx) => ({
           id: idx + 1,
           name: cName,
@@ -1261,7 +1261,6 @@ function Storefront({ onLogout }) {
   const buyNowDiscountAmount = buyNowRawSubtotal * (buyNowDiscountPercent / 100);
   const buyNowFinalTotal = (buyNowRawSubtotal - buyNowDiscountAmount).toFixed(2);
 
-  // Normalization logic so categories match whether stored by string, slug, or object
   const filteredProducts = (Array.isArray(products) ? products : [])
     .filter(p => {
       if (selectedCategory === 'all') return true;
@@ -1422,7 +1421,7 @@ function Storefront({ onLogout }) {
             </div>
           ) : (
             filteredProducts.map((product) => {
-              const productImg = formatImageUrl(product.image || product.image_url);
+              const productImg = formatImageUrl(product);
               return (
                 <div
                   key={product.id}
@@ -1445,7 +1444,7 @@ function Storefront({ onLogout }) {
                         onError={(e) => {
                           e.target.onerror = null;
                           e.target.style.display = 'none';
-                          e.target.parentElement.innerHTML = '📦';
+                          if (e.target.parentElement) e.target.parentElement.innerHTML = '📦';
                         }}
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                       />
@@ -1565,8 +1564,8 @@ function Storefront({ onLogout }) {
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
               <div style={{ width: '54px', height: '54px', borderRadius: '8px', background: '#fff', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #e2e8f0', flexShrink: 0 }}>
-                {formatImageUrl(buyNowProduct.image || buyNowProduct.image_url) ? (
-                  <img src={formatImageUrl(buyNowProduct.image || buyNowProduct.image_url)} alt={buyNowProduct.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                {formatImageUrl(buyNowProduct) ? (
+                  <img src={formatImageUrl(buyNowProduct)} alt={buyNowProduct.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
                   <Package size={24} color="#94a3b8" />
                 )}
@@ -1950,14 +1949,14 @@ function Storefront({ onLogout }) {
           <div style={{ background: '#fff', borderRadius: '16px', maxWidth: '680px', width: '100%', overflow: 'hidden', display: 'grid', gridTemplateColumns: '1fr 1fr', position: 'relative' }}>
             <button onClick={() => setQuickViewProduct(null)} style={{ position: 'absolute', top: '16px', right: '16px', background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={18} /></button>
             <div style={{ background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-              {formatImageUrl(quickViewProduct.image || quickViewProduct.image_url) ? (
+              {formatImageUrl(quickViewProduct) ? (
                 <img
-                  src={formatImageUrl(quickViewProduct.image || quickViewProduct.image_url)}
+                  src={formatImageUrl(quickViewProduct)}
                   alt={quickViewProduct.name}
                   onError={(e) => {
                     e.target.onerror = null;
                     e.target.style.display = 'none';
-                    e.target.parentElement.innerHTML = '📦';
+                    if (e.target.parentElement) e.target.parentElement.innerHTML = '📦';
                   }}
                   style={{ maxWidth: '100%', maxHeight: '280px', objectFit: 'contain' }}
                 />
